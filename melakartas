@@ -1,0 +1,288 @@
+(require (lib "trace.ss"))
+(load "~/Documents/Scheme/PLT Scheme v372/berkeley/simply.scm")
+
+;converting melakarta number into a usable format
+
+(define (remainder-division dividend divisor)
+  (remainder-division-help dividend divisor 1))
+
+(define (remainder-division-help dividend divisor count)
+  (cond ((> (* count divisor) dividend) (list (- count 1) (- dividend (* (- count 1) divisor))))
+        (else (remainder-division-help dividend divisor (+ count 1)))))
+
+(define (melakarta-number->notes number)
+      '(1 4 5 7 8 11 12)
+      (if (and (> number 0)(< number 73))
+          (let ((first-half (car (remainder-division number 6)))
+                (second-half (cadr (remainder-division number 6))))
+            (cond ((= second-half 0) (append '(1) (number-to-notes-to-pa (- first-half 1)) '(8) (number-to-notes-from-pa second-half)))
+                  (else (append '(1) (number-to-notes-to-pa first-half) '(8) (number-to-notes-from-pa second-half)))))))
+
+(define (number-to-notes-to-pa n)
+  (cadr (assoc n *fronts*)))
+
+(define (number-to-notes-from-pa n)
+  (cadr (assoc n *backs*)))
+
+(define *fronts* '((0 (2 3 6))
+                   (1 (2 4 6))
+                   (2 (2 5 6))
+                   (3 (3 4 6))
+                   (4 (3 5 6))
+                   (5 (4 5 6))
+                   (6 (2 3 7))
+                   (7 (2 4 7))
+                   (8 (2 5 7))
+                   (9 (3 4 7))
+                   (10 (3 5 7))
+                   (11 (4 5 7))
+                   (12 (4 5 7))))
+
+(define *fronts-upside-down* '(((2 3 6) 0)
+                               ((2 4 6) 1)
+                               ((2 5 6) 2)
+                               ((3 4 6) 3)
+                               ((3 5 6) 4)
+                               ((4 5 6) 5)
+                               ((2 3 7) 6)
+                               ((2 4 7) 7)
+                               ((2 5 7) 8)
+                               ((3 4 7) 9)
+                               ((3 5 7) 10)
+                               ((4 5 7) 11)))
+
+(define *backs* '((1 (9 10))
+                  (2 (9 11))
+                  (3 (9 12))
+                  (4 (10 11))
+                  (5 (10 12))
+                  (0 (11 12))))
+
+(define *backs-upside-down* '(((9 10) 1)
+                              ((9 11) 2)
+                              ((9 12) 3)
+                              ((10 11) 4)
+                              ((10 12) 5)
+                              ((11 12) 6)))
+
+;differences
+
+(define (notes->diffs notes)
+  (cond ((null? (cdr notes)) (cond ((= (car notes) 10) '(3))
+                                   ((= (car notes) 11) '(2))
+                                   ((= (car notes) 12) '(1))))
+        (else (cons (- (cadr notes) (car notes)) (notes->diffs (cdr notes))))))
+
+(define (diffs->notes diffs)
+  (diffs->notes-help '(1) diffs))
+
+(define (diffs->notes-help so-far diffs-left)
+  (cond ((null? (cdr diffs-left)) so-far)
+        (else (diffs->notes-help (append so-far (list (+ (car diffs-left) (last so-far)))) (cdr diffs-left)))))
+
+(define (last lst)
+  (cond ((null? (cdr lst)) (car lst))
+        (else (last (cdr lst)))))
+
+;shifting mechanism
+
+(define (all-shifts diffs)
+  (all-shifts-help diffs (- (length diffs) 1)))
+
+(define (all-shifts-help diffs count)
+  (cond ((< count 0) '())
+        (else (cons diffs (all-shifts-help (shift diffs) (- count 1))))))
+
+(define (shift diffs)
+  (append (cdr diffs) (list (car diffs))))
+
+;going backwards
+
+(define (dissemble notes)
+  (if (= (caddr (cddr notes)) 8)
+      (list (list (cadr notes)
+                  (caddr notes)
+                  (cadddr notes))
+            (list (caddr (cdddr notes))
+                  (cadddr (cdddr notes))))
+      'scrap))
+
+(define (dissembled->melakarta-number dissembled)
+  (cond ((equal? dissembled 'scrap) 'scrap)
+        ((assoc (car dissembled) *fronts-upside-down*) (+ (* 6 (cadr (assoc (car dissembled) *fronts-upside-down*))) 
+                                                          (cadr (assoc (cadr dissembled) *backs-upside-down*))))
+        (else 'scrap)))
+
+(define (remove-scrap scrap-or-dissembled)
+  (cond ((null? scrap-or-dissembled) '())
+        ((equal? (cadar scrap-or-dissembled) 'scrap) (remove-scrap (cdr scrap-or-dissembled)))
+        (else (cons (car scrap-or-dissembled) (remove-scrap (cdr scrap-or-dissembled))))))
+
+;summin' it up
+
+(define (number->shifts num)
+  (all-shifts (notes->diffs (melakarta-number->notes num))))
+
+(define (shifts->numbers shifts)
+  (remove-scrap (map shift->number (labeled shifts))))
+
+(define (shift->number labeled-shift)
+  (let ((shift (cadr labeled-shift)))
+    (list (car labeled-shift) (dissembled->melakarta-number (dissemble (diffs->notes shift))))))
+
+(define (labeled shifts)
+  (labeled-help shifts 6))
+
+(define (labeled-help shifts count)
+  (cond ((< count 0) '())
+        ((= count 6) (cons (list "S" (car shifts)) (labeled-help (cdr shifts) (- count 1))))
+        ((= count 5) (cons (list "R" (car shifts)) (labeled-help (cdr shifts) (- count 1))))
+        ((= count 4) (cons (list "G" (car shifts)) (labeled-help (cdr shifts) (- count 1))))
+        ((= count 3) (cons (list "M" (car shifts)) (labeled-help (cdr shifts) (- count 1))))
+        ((= count 2) (cons (list "P" (car shifts)) (labeled-help (cdr shifts) (- count 1))))
+        ((= count 1) (cons (list "D" (car shifts)) (labeled-help (cdr shifts) (- count 1))))
+        ((= count 0) (cons (list "N" (car shifts)) (labeled-help (cdr shifts) (- count 1))))))
+    
+(define (gruha-bedham ragam)
+  (if (number? ragam)
+      (gruha-bedham-help ragam)
+      (gruha-bedham-help (ragam->number ragam))))
+
+(define (gruha-bedham-help num)
+  (answer-in-ragam-names (shifts->numbers (number->shifts num))))
+
+;ragams to numbers and vice versa
+
+(define (number->ragam num)
+  (cadr (assoc num *ragams-and-numbers*)))
+
+(define (ragam->number ragam)
+  (ragam->number-help ragam *ragams-and-numbers*))
+
+(define (ragam->number-help ragam lst)
+  (cond ((null? lst) (error "That ragam/spelling is not in our dictionary."))
+        ((equal? ragam (cadar lst)) (caar lst))
+        (else (ragam->number-help ragam (cdr lst)))))
+
+(define (answer-in-ragam-names lst)
+  (cond ((null? lst) '())
+        (else (cons (list (caar lst) (number->ragam (cadar lst)) (cadar lst)) (answer-in-ragam-names (cdr lst))))))
+
+(define *ragams-and-numbers* '((1 "Kanakangi")
+                               (2 "Rathnangi")
+                               (3 "Ganamurthi")
+                               (4 "Vanaspathi")
+                               (5 "Manavathi")
+                               (6 "Tanarupi")
+                               
+                               (7 "Senavathi")
+                               (8 "Hanumathodi")
+                               (9 "Dhenuka")
+                               (10 "Natakapriya")
+                               (11 "Kokilapriya")
+                               (12 "Rupavathi")
+                               
+                               (13 "Gayakapriya")
+                               (14 "Vakulabharanam")
+                               (15 "Maya Malavagoulai")
+                               (16 "Chakravakam")
+                               (17 "Suryakantham")
+                               (18 "Hatakambari")
+                               
+                               (19 "Jhankaradhwani")
+                               (20 "Natabhairavi")
+                               (21 "Keeravani")
+                               (22 "Kharaharapriya")
+                               (23 "Gauree Manohari")
+                               (24 "Varunapriya")
+                               
+                               (25 "Mara Ranjani")
+                               (26 "Charukesi")
+                               (27 "Sarasangi")
+                               (28 "Harikambodi")
+                               (29 "Dheera Shankarabharanam")
+                               (30 "Naga Nandini")
+                               
+                               (31 "Yagapriya")
+                               (32 "Raga Vardhani")
+                               (33 "Gangeyabhushani")
+                               (34 "Vagadeeshwari")
+                               (35 "Sulini")
+                               (36 "Chalanattai")
+                               
+                               
+                               (37 "Salagam")
+                               (38 "Jalarnavam")
+                               (39 "Jhalavarali")
+                               (40 "Navaneetham")
+                               (41 "Pavani")
+                               (42 "Raghupriya")
+                               
+                               (43 "Gavambodhi")
+                               (44 "Bhavapriya")
+                               (45 "Shubhapantuvarali")
+                               (46 "Shadvidhamargini")
+                               (47 "Suvarnangi")
+                               (48 "Divyamani")
+                               
+                               (49 "Dhavalambari")
+                               (50 "Namanarayani")
+                               (51 "Pantuvarali")
+                               (52 "Ramapriya")
+                               (53 "Gamanasrama")
+                               (54 "Viswambari")
+                               
+                               (55 "Shyamalangi")
+                               (56 "Shanmukhapriya")
+                               (57 "Simhendramadhyamam")
+                               (58 "Hemavathi")
+                               (59 "Dharmavathi")
+                               (60 "Neethimathi")
+                               
+                               (61 "Kanthamani")
+                               (62 "Rishabhapriya")
+                               (63 "Lathangi")
+                               (64 "Vachaspathi")
+                               (65 "Mechakalyani")
+                               (66 "Chitrambari")
+                               
+                               (67 "Sucharithram")
+                               (68 "Jyothiswarupini")
+                               (69 "Dhathuvardhani")
+                               (70 "Nasikabhushani")
+                               (71 "Kosalam")
+                               (72 "Rasikapriya")))
+
+
+(define (make-list from to)
+  (cond ((< to from) '())
+        (else (cons to (make-list from (- to 1))))))
+
+(define *the-ragams* (make-list 1 72))
+
+(define (remove-lone-ragams lst)
+  (cond ((null? lst) '())
+        ((= (length (car lst)) 1) (remove-lone-ragams (cdr lst)))
+        (else (cons (car lst) (remove-lone-ragams (cdr lst))))))
+
+(define (remove-duplicate-cycles lst)
+  (cond ((null? lst) '())
+        (else (cons (car lst) (remove-duplicate-cycles (rem-dup-cyc-help (car lst) (cdr lst)))))))
+
+(define (rem-dup-cyc-help cyc lst)
+  (cond ((null? lst) '())
+        ((cycle-equal? cyc (car lst)) (rem-dup-cyc-help cyc (cdr lst)))
+        (else (cons (car lst) (rem-dup-cyc-help cyc (cdr lst))))))
+
+(define (cycle-equal? cyc1 cyc2)
+  (cond ((null? cyc1) #t)
+        ((list-member? (car cyc1) cyc2) (cycle-equal? (cdr cyc1) cyc2))
+        (else #f)))
+
+(define (list-member? x lst)
+  (cond ((null? lst) #f)
+        ((equal? x (car lst)) #t)
+        (else (list-member? x (cdr lst)))))
+
+(define (remove-swaram-markers lst)
+  (map (lambda (x) (map cdr x)) lst))
